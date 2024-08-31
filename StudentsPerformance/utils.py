@@ -1,4 +1,5 @@
 import yaml
+import pickle
 from pathlib import Path
 from box import ConfigBox
 from box.exceptions import BoxValueError
@@ -56,4 +57,17 @@ def create_directories(path_to_directories: list[Path], verbose: bool = True):
         path.mkdir(parents=True, exist_ok=True)
         if verbose:
             logger.info(f'Created directory at {path}')
+
+
+def save_object(file_path: Path, object):
+    try:
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        logger.info(f'Created directory at {file_path.parent}')
+        with open(file_path, 'wb') as file_obj:
+            pickle.dump(object, file_obj)
+        logger.info(f'Object saved successfully at {file_path}')
+
+    except Exception as e:
+        logger.error(f'Failed to save object at {file_path}: {e}')
+        raise CustomException(e, sys)
 
