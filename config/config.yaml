@@ -1,5 +1,6 @@
 artifact_root: artifacts
 
+# ---------- Data ingestion settings ----------
 data_ingestion:
   root_dir: artifacts/data_ingestion
   kaggle_dataset_id: spscientist/students-performance-in-exams
@@ -7,12 +8,36 @@ data_ingestion:
   train_data_path: artifacts/data_ingestion/train_data.csv
   test_data_path: artifacts/data_ingestion/test_data.csv
 
-
+# ---------- Data transformation settings ----------
 data_transformation:
   root_dir: artifacts/data_transformation
   train_data_path: artifacts/data_ingestion/train_data.csv
   test_data_path: artifacts/data_ingestion/test_data.csv
   features_output_path: artifacts/data_transformation/features_processors.pkl
-  categorical_features: ["gender", "race/ethnicity", "parental level of education"]
-  numerical_features: ["reading score", "writing score"]
+
+features_data_transformation:
   target_variable: "math score"
+  numerical_features:
+    - "reading score"
+    - "writing score"
+  categorical_features:
+    - 'gender'
+    - 'race/ethnicity'
+    - 'parental level of education'
+    - 'lunch'
+    - 'test preparation course'
+
+
+pipeline_data_transformation:
+  numerical_pipeline:
+    - sklearn.impute.SimpleImputer:
+        strategy: "median"
+    - sklearn.preprocessing.StandardScaler:
+        with_mean: False
+  categorical_pipeline:
+    - sklearn.impute.SimpleImputer:
+        strategy: "most_frequent"
+    - sklearn.preprocessing.OneHotEncoder:
+        sparse_output: False
+    - sklearn.preprocessing.StandardScaler:
+        with_mean: False

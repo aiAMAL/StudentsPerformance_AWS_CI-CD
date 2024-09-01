@@ -3,73 +3,124 @@ import sys
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from importlib import import_module
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from StudentsPerformance.logger import logger
 from StudentsPerformance.utils import save_object
+from StudentsPerformance.exception import CustomException
 from StudentsPerformance.component.data_ingestion import DataIngestion
 from StudentsPerformance.entity import DataTransformationConfig
 from StudentsPerformance.config import ConfigurationManager
-from StudentsPerformance.exception import CustomException
-from StudentsPerformance.logger import logger
 
-from sklearn.pipeline import Pipeline
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.compose import ColumnTransformer
 
 class DataTransformation:
     def __init__(self, config: DataTransformationConfig):
         self.config = config
 
+    def initialize_pipeline(self):
+        pipeline_data_transformation = self.config.pipeline_data_transformation
+
+        def import_instantiate_pipeline_step(pipeline_step):
+            """
+            Imports and instantiates pipeline steps dynamically.
+
+            :param pipeline_step: List of pipeline step configurations.
+            :return: Initialized sklearn Pipeline object.
+            """
+            steps = []
+            for step in pipeline_step:
+                try:
+                    # Dynamically import the class
+                    module_name, class_name = step.method_class.rsplit('.', 1)
+                    module = import_module(module_name)
+                    cls = getattr(module, class_name)
+
+                    # Initialize the class with the parameters
+                    step_instance = cls(**step.params)
+                    steps.append((class_name, step_instance))
+
+                except ImportError as e:
+                    logger.error(f"Module {module_name} could not be imported: {str(e)}")
+                    raise CustomException(e, sys)
+                except AttributeError as e:
+                    logger.error(f"Class {class_name} not found in module {module_name}: {str(e)}")
+                    raise CustomException(e, sys)
+                except Exception as e:
+                    logger.error(f"Error in {step.method_class} instantiation: {str(e)}")
+                    raise CustomException(e, sys)
+
+            return Pipeline(steps=steps)
+
+        # Initialize the numerical pipeline
+        yaml_numerical_pipeline = pipeline_data_transformation.numerical_pipeline
+        numerical_pipeline = import_instantiate_pipeline_step(yaml_numerical_pipeline)
+
+        # Initialize the categorical pipeline
+        yaml_categorical_pipeline = pipeline_data_transformation.categorical_pipeline
+        categorical_pipeline = import_instantiate_pipeline_step(yaml_categorical_pipeline)
+
+        return numerical_pipeline, categorical_pipeline
+
     def data_transformation(self):
-        numerical_features = self.config.numerical_features
-        categorical_features = self.config.categorical_features
-        target_variable = self.config.target_variable
+        try:
+            # Load training and testing data
+            train_data = pd.read_csv(self.config.train_data_path)
+            test_data = pd.read_csv(self.config.test_data_path)
 
-        numerical_pipeline = Pipeline(
-            steps=[('SimpleImputer', SimpleImputer(strategy='median')),
-                   ('StandardScaler', StandardScaler(with_mean=False))]
-        )
+            features = self.config.features_data_transformation
+            numerical_features = features.numerical_features
+            categorical_features = features.categorical_features
 
-        categorical_pipeline = Pipeline(
-            steps=[('SimpleImputer', SimpleImputer(strategy='most_frequent')),
-                   ('OneHotEncoder', OneHotEncoder(sparse_output=False)),
-                   ('StandardScaler', StandardScaler(with_mean=False))]
-        )
+            # Separate features and target variable
+            features_train = train_data.drop(columns=[features.target_variable], axis=1)
+            features_test = test_data.drop(columns=[features.target_variable], axis=1)
+            target_train = train_data[features.target_variable]
+            target_test = test_data[features.target_variable]
 
-        processing = ColumnTransformer([('numerical_pipeline', numerical_pipeline, numerical_features),
-                                        ('categorical_pipeline', categorical_pipeline, categorical_features)])
+            # Initialize the pipelines
+            numerical_pipeline, categorical_pipeline = self.initialize_pipeline()
 
-        train_data = pd.read_csv(self.config.train_data_path)
-        test_data = pd.read_csv(self.config.test_data_path)
+            # Combine the pipelines using ColumnTransformer
+            processing = ColumnTransformer([('numerical_pipeline', numerical_pipeline, numerical_features),
+                                            ('categorical_pipeline', categorical_pipeline, categorical_features)])
 
-        features_train_data = train_data.drop(columns=[self.config.target_variable], axis=1)
-        target_train_data = train_data[self.config.target_variable]
+            # Transform the data
+            train_features_transformed = processing.fit_transform(features_train)
+            test_features_transformed = processing.transform(features_test)
 
-        features_test_data = test_data.drop(columns=[self.config.target_variable], axis=1)
-        target_test_data = test_data[self.config.target_variable]
+            # Combine transformed features with target variable
+            train_data_array = np.c_[train_features_transformed, np.array(target_train)]
+            test_data_array = np.c_[test_features_transformed , np.array(target_test)]
 
-        features_train_data_array = processing.fit_transform(features_train_data)
-        features_test_data_array = processing.transform(features_test_data)
+            # Save the processing object for future use
+            save_object(file_path=Path(self.config.features_output_path), object=processing)
+            logger.info("Data transformation completed successfully.")
 
-        train_array = np.c_[features_train_data_array, np.array(target_train_data)]
-        test_array = np.c_[features_test_data_array, np.array(target_test_data)]
+            return train_data_array, test_data_array
 
-        save_object(
-            file_path=Path(self.config.features_output_path),
-            object=processing
-        )
-
-        return (
-            train_array,
-            test_array
-        )
+        except Exception as e:
+            logger.error(f"Failed to perform data transformation: {str(e)}")
+            raise CustomException(e, sys)
 
 
 if __name__ == '__main__':
-    config = ConfigurationManager()
-    data_ingestion_config = config.get_data_ingestion_config()
-    data_ingestion = DataIngestion(data_ingestion_config)
-    data_ingestion.initiate_data_ingestion()
-    data_transformation_config = config.get_data_transformation_config()
-    data_transformation = DataTransformation(data_transformation_config)
-    train_arr, test_arr = data_transformation.data_transformation()
+    try:
+        # Configuration setup
+        config = ConfigurationManager()
 
+        # Data ingestion process
+        data_ingestion_config = config.get_data_ingestion_config()
+        data_ingestion = DataIngestion(data_ingestion_config)
+        data_ingestion.initiate_data_ingestion()
+
+        # Data transformation process
+        data_transformation_config = config.get_data_transformation_config()
+        data_transformation = DataTransformation(data_transformation_config)
+        train_arr, test_arr = data_transformation.data_transformation()
+
+        logger.info("Pipeline completed successfully.")
+
+    except Exception as e:
+        logger.error(f"Error in the main pipeline: {str(e)}")
+        raise CustomException(e, sys)
