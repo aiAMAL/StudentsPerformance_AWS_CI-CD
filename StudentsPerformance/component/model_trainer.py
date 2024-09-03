@@ -1,7 +1,10 @@
+import time
+
 import sys
 from pathlib import Path
 from importlib import import_module
 from sklearn.metrics import r2_score
+from sklearn.model_selection import GridSearchCV
 from StudentsPerformance.utils import save_object
 from StudentsPerformance.logger import logger
 from StudentsPerformance.exception import CustomException
@@ -18,6 +21,7 @@ class ModelTraining:
     def initialize_model_class(self):
         list_of_models = self.config.list_trained_models
         classes = []
+        params = []
         for model in list_of_models:
             module_name, class_name = model.model_class.rsplit('.', 1)
             module = import_module(module_name)
@@ -28,21 +32,27 @@ class ModelTraining:
             # print(class_name, '  ', type(class_name))
             # print(class_instance, '  ', type(class_instance))
             classes.append({class_name: class_instance})
-        return classes
+            params.append({class_name: model.hyperparams})
+        return classes, params
 
-    def evaluate_model(self, X_train, y_train, X_test, y_test, models):
+    def evaluate_model(self, X_train, y_train, X_test, y_test, models, hyperparams):
         try:
             report_score = {}
             trained_models = {}
-            for model in models:
-                model_name = list(model.keys())[0]
-                model_cls = list(model.values())[0]
-                # print(f'\n\n--------- Train {model_name} -----------')
-                # print()
+            for i in range(len(models)):
+                model_name = list(models[i].keys())[0]
+                model_cls = list(models[i].values())[0]
+                params = list(hyperparams[i].values())[0]
+                print(f'\n\n--------- Train {model_name} -----------')
+                print()
+                gs = GridSearchCV(model_cls, params, cv=3)
+                gs.fit(X_train, y_train)
+                print(f'--- GS for {model_name} Done ---')
+                model_cls.set_params(**gs.best_params_)
                 model_cls.fit(X_train, y_train)
                 y_pred = model_cls.predict(X_test)
                 test_model_score = r2_score(y_test, y_pred)
-                # print('-->score: ', test_model_score)
+                print('-->score: ', test_model_score)
                 # report_score[model_name] = test_model_score
                 # trained_models[model_name] = model_cls
                 report_score[model_name] = (test_model_score, model_cls)
@@ -57,8 +67,10 @@ class ModelTraining:
         X_test = test_array[:, : -1]
         y_test = test_array[:, -1]
 
-        instantiated_models = self.initialize_model_class()
-        model_report = self.evaluate_model(X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test, models=instantiated_models)
+        instantiated_models, hyperparams = self.initialize_model_class()
+        start_time = time.time()
+        model_report = self.evaluate_model(X_train=X_train, y_train=y_train, X_test=X_test, y_test=y_test, models=instantiated_models, hyperparams=hyperparams)
+        print("--- %s seconds ---" % (time.time() - start_time))
 
         best_model_score, (best_model_name, best_model_cls) = max(model_report.items(), key=lambda item: item[1][0])    # apply max on first element[0] of the second variable(tupele)[1}
 
