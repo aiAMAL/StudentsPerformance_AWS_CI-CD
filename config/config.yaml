@@ -41,3 +41,84 @@ pipeline_data_transformation:
         sparse_output: False
     - sklearn.preprocessing.StandardScaler:
         with_mean: False
+
+# ---------- Model Training settings ----------
+model_trainer:
+  root_dir: artifacts/model_trainer
+  model_output_pkl: artifacts/model_trainer/best_model.pkl
+  transformed_data_pkl: artifacts/data_transformation/features_processors.pkl
+
+common_hyperparameters:
+  learning_rate: &learning_rate [0.001, 0.005, 0.01, 0.05, 0.1]
+  n_estimators: &n_estimators [50, 150, 250, 300]
+  tree_max_depth: &tree_max_depth [None, 10, 20, 30]
+  gradian_max_depth: &gradian_max_depth [3, 5, 7, 9]
+  subsample: &subsample [0.7, 0.8, 0.9, 1.0]
+  
+training_hyperparameters:
+  list_trained_models:
+    - LinearRegression:
+        model_class: sklearn.linear_model.LinearRegression
+        hyperparams:
+          alpha: [0.001, 0.01, 0.1, 1.0, 10.0]
+    - KNeighborsRegressor:
+        model_class: sklearn.neighbors.KNeighborsRegressor
+        hyperparams:
+          n_neighbors: [3, 5, 7, 9, 11, 15]
+          weights: [uniform, distance]
+          algorithm: [auto, ball_tree, kd_tree, brute]
+    - DecisionTreeRegressor:
+        model_class: sklearn.tree.DecisionTreeRegressor
+        hyperparams:
+          criterion: ['squared_error', 'friedman_mse', 'absolute_error', 'poisson']
+          max_depth: *tree_max_depth
+          min_samples_split: [2, 5, 10]
+          min_samples_leaf: [1, 2, 4]
+    - RandomForestRegressor:
+        model_class: sklearn.ensemble.RandomForestRegressor
+        hyperparams:
+          n_estimators: *n_estimators
+          max_features: [auto, sqrt, log2, None]
+          max_depth: *tree_max_depth
+          min_samples_split: [2, 5, 10]
+          min_samples_leaf: [1, 2, 4]
+    - GradientBoostingRegressor:
+        model_class: sklearn.ensemble.GradientBoostingRegressor
+        hyperparams:
+          learning_rate: *learning_rate
+          n_estimators: *n_estimators
+          max_depth: *gradian_max_depth
+          subsample: *subsample
+          min_samples_split: [2, 5, 10]
+    - XGBRegressor:
+        model_class: xgboost.XGBRegressor
+        hyperparams:
+          learning_rate: *learning_rate
+          n_estimators: *n_estimators
+          max_depth: *gradian_max_depth
+          max_leaves: [5, 10, 20, 30]
+          subsample: *subsample
+          colsample_bytree: [0.7, 0.8, 0.9, 1.0]
+    - CatBoostRegressor:
+        model_class: catboost.CatBoostRegressor
+        hyperparams:
+          learning_rate: *learning_rate
+          iterations: *n_estimators
+          depth: [4, 6, 8, 10]
+          l2_leaf_reg: *gradian_max_depth
+          border_count: [32, 64, 128]
+    - AdaBoostRegressor:
+        model_class: sklearn.ensemble.AdaBoostRegressor
+        hyperparams:
+          learning_rate: *learning_rate
+          n_estimators: *n_estimators
+
+
+#    - CatBoostRegressor:
+#        model_class: catboost.CatBoostRegressor
+#        hyperparams:
+#          learning_rate: *learning_rate
+#          iterations: *n_estimators
+#          depth: [4, 6, 8, 10]
+#          l2_leaf_reg: *gradian_max_depth
+#          border_count: [32, 64, 128]
